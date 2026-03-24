@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { Upload, FileText, X, Loader2 } from "lucide-react";
 
 interface FileUploadProps {
@@ -39,15 +39,13 @@ export default function FileUpload({ onFileContent, isAnalyzing }: FileUploadPro
       onDragLeave={() => setIsDragOver(false)}
       onDrop={onDrop}
     >
-      <AnimatePresence mode="wait">
-        {!file ? (
-          <motion.label
-            key="upload"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="flex flex-col items-center gap-4 cursor-pointer py-8"
-          >
+      {!file ? (
+        <motion.label
+          key="upload"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="flex flex-col items-center gap-4 cursor-pointer py-8"
+        >
             <div className="w-16 h-16 rounded-2xl bg-secondary flex items-center justify-center">
               <Upload className="w-7 h-7 text-muted-foreground" />
             </div>
@@ -66,15 +64,14 @@ export default function FileUpload({ onFileContent, isAnalyzing }: FileUploadPro
                 if (f) handleFile(f);
               }}
             />
-          </motion.label>
-        ) : (
-          <motion.div
-            key="file"
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0 }}
-            className="flex items-center gap-4"
-          >
+        </motion.label>
+      ) : (
+        <motion.div
+          key="file"
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="flex items-center gap-4"
+        >
             <div className="w-12 h-12 rounded-xl bg-secondary flex items-center justify-center flex-shrink-0">
               {isAnalyzing ? (
                 <Loader2 className="w-5 h-5 text-foreground animate-spin" />
@@ -97,8 +94,7 @@ export default function FileUpload({ onFileContent, isAnalyzing }: FileUploadPro
               </button>
             )}
           </motion.div>
-        )}
-      </AnimatePresence>
+      )}
     </motion.div>
   );
 }
