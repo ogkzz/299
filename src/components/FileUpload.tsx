@@ -93,9 +93,8 @@ export default function FileUpload({ onFileContent, isAnalyzing }: FileUploadPro
                 <X className="w-4 h-4 text-muted-foreground" />
               </button>
             )}
-        </motion.div>
+          </motion.div>
       )}
-    </motion.div>
     </motion.div>
   );
 }
