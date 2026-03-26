@@ -1035,27 +1035,35 @@ export async function analyzeReport(
   onProgress('Detectando apps de VPN/Proxy...', 35);
   const vpnResults = analyzeVPNApps(report);
 
-  // Stage 4: Analyze domains
-  onProgress('Analisando domínios acessados...', 45);
+  // Stage 4: Detect IPA sideload tools
+  onProgress('Detectando ferramentas de sideload (KSign, ESign, GBox)...', 40);
+  const sideloadResults = analyzeSideloadApps(report);
+
+  // Stage 5: Analyze domains
+  onProgress('Analisando domínios acessados...', 48);
   const domainResults = analyzeSuspiciousDomains(report);
 
-  // Stage 5: Analyze IP
+  // Stage 6: Analyze IP
   onProgress('Processando dados de IP...', 55);
   const ipResults = analyzeIPInfo(ipInfo);
 
-  // Stage 6: Temporal correlation
-  onProgress('Correlacionando eventos temporais...', 65);
+  // Stage 7: Temporal correlation
+  onProgress('Correlacionando eventos temporais...', 62);
   const temporalResults = analyzeTemporalCorrelation(report);
 
-  // Stage 7: File integrity
-  onProgress('Verificando integridade do arquivo...', 75);
+  // Stage 8: File integrity
+  onProgress('Verificando integridade do arquivo...', 70);
   const integrityResults = analyzeFileIntegrity(report, rawContent);
 
-  // Stage 8: Network behavior
-  onProgress('Analisando comportamento de rede...', 80);
+  // Stage 9: Network behavior
+  onProgress('Analisando comportamento de rede...', 76);
   const behaviorResults = analyzeNetworkBehavior(report);
 
-  // Stage 9: Domain IP enrichment (check suspicious domains)
+  // Stage 10: App Store behavior
+  onProgress('Analisando comportamento da App Store...', 80);
+  const appStoreResults = analyzeAppStoreBehavior(report);
+
+  // Stage 11: Domain IP enrichment
   onProgress('Enriquecendo domínios suspeitos com API...', 85);
   const suspiciousDomains = [...new Set(
     report.networkAccess
@@ -1078,11 +1086,13 @@ export async function analyzeReport(
   // Combine all results
   const allResults = [
     ...vpnResults,
+    ...sideloadResults,
     ...domainResults,
     ...ipResults,
     ...temporalResults,
     ...integrityResults,
     ...behaviorResults,
+    ...appStoreResults,
     ...dcResults,
   ];
 
@@ -1104,7 +1114,7 @@ export async function analyzeReport(
       title: 'Nenhuma atividade suspeita detectada',
       description: 'A análise completa não identificou indicadores de proxy, VPN, túnel ou interceptação de tráfego no relatório.',
       evidence: [
-        'Todas as 8 verificações passaram sem alertas',
+        'Todas as 10 verificações passaram sem alertas',
         `${report.networkAccess.length} entradas de rede analisadas`,
         `Domínios verificados via API de inteligência de IP`,
       ],
