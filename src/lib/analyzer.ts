@@ -132,6 +132,39 @@ const GAME_DOMAINS = [
   'pubg', 'tencent', 'riotgames', 'activision', 'supercell',
 ];
 
+// IPA Sideloading / Signing tools detection
+const SIDELOAD_BUNDLE_IDS = new Set([
+  'com.SideStore.SideStore', 'com.rileytestut.AltStore',
+  'com.rileytestut.AltStore.Beta', 'com.rileytestut.Delta',
+  'io.github.nickyuxuan.esign', 'com.esign.app',
+  'com.gbox.app', 'com.gbox.ios', 'io.gbox.ios',
+  'com.ksign.app', 'io.ksign.app', 'com.ksign.ios',
+  'com.signtool.app', 'com.scarlet.ios', 'com.feather.ios',
+  'com.buildstore.app', 'com.ipastore.app',
+  'com.topstore.ios', 'com.vshare.ios', 'com.25pp.ppclient',
+  'com.tutuapp.tutuapphwenterprise', 'com.appvalley.ios',
+  'com.tweakbox.app', 'com.ignition.igeek', 'com.trollstore.app',
+  'com.saurik.Cydia', 'org.coolstar.Sileo', 'xyz.willy.Zebra',
+]);
+
+const SIDELOAD_KEYWORDS_IN_BUNDLEID = [
+  'sidestore', 'altstore', 'esign', 'gbox', 'ksign',
+  'sideload', 'signtool', 'scarlet', 'feather', 'buildstore',
+  'ipastore', 'topstore', 'vshare', '25pp', 'tutuapp',
+  'appvalley', 'tweakbox', 'ignition', 'trollstore',
+  'cydia', 'sileo', 'zebra', 'jailbreak',
+];
+
+const SIDELOAD_DOMAINS = [
+  'esign.yyyue.xyz', 'gbox.run', 'ksign.cc', 'sidestore.io',
+  'altstore.io', 'scarletcloud.com', 'signtools.cc',
+  'app.localhost.direct', 'api.sidestore.io', 'cdn.altstore.io',
+  'featherapp.io', 'trollstore.app', 'cydia.saurik.com',
+  'repo.chariz.com', 'repo.dynastic.co', 'sileo.me',
+  'appvalley.vip', 'tutuapp.vip', 'tweakboxapp.com',
+  'next.bsstore.net', 'ignition.fun',
+];
+
 // ============ HELPERS ============
 
 let idCounter = 0;
@@ -799,6 +832,140 @@ function analyzeNetworkBehavior(report: ParsedReport): AnalysisResult[] {
           severity: 5,
           module: 'Análise Comportamental',
         });
+      }
+    }
+  }
+
+  return results;
+}
+
+// ============ IPA SIDELOAD DETECTION ============
+
+function analyzeSideloadApps(report: ParsedReport): AnalysisResult[] {
+  const results: AnalysisResult[] = [];
+  const foundApps = new Set<string>();
+
+  for (const entry of report.networkAccess) {
+    const bid = entry.bundleID || entry.context || '';
+    if (!bid) continue;
+
+    // Exact bundle ID match
+    if (SIDELOAD_BUNDLE_IDS.has(bid) && !foundApps.has(bid)) {
+      foundApps.add(bid);
+      results.push({
+        id: genId(),
+        category: 'confirmed',
+        title: `App de sideload/IPA detectado: ${bid}`,
+        description: `O bundle ID "${bid}" corresponde a uma ferramenta conhecida de instalação de apps não-oficiais (sideloading). Isso permite instalar apps modificados, cheats e ferramentas de manipulação.`,
+        evidence: [
+          `Bundle ID: ${bid}`,
+          `Domínio acessado: ${entry.domain}`,
+          `Timestamp: ${entry.firstAccess || 'N/A'}`,
+          `Hits: ${entry.hits}`,
+        ],
+        severity: 10,
+        timestamp: entry.firstAccess,
+        module: 'Detecção de IPA/Sideload',
+      });
+    }
+
+    // Keyword match
+    const bidLower = bid.toLowerCase();
+    const matchedKw = SIDELOAD_KEYWORDS_IN_BUNDLEID.find(kw => bidLower.includes(kw));
+    if (matchedKw && !foundApps.has(bid)) {
+      foundApps.add(bid);
+      results.push({
+        id: genId(),
+        category: 'confirmed',
+        title: `Possível app de sideload: ${bid}`,
+        description: `O bundle ID contém a palavra-chave "${matchedKw}", associada a ferramentas de sideloading (KSign, ESign, GBox, etc).`,
+        evidence: [
+          `Bundle ID: ${bid}`,
+          `Keyword: ${matchedKw}`,
+          `Domínio: ${entry.domain}`,
+        ],
+        severity: 9,
+        timestamp: entry.firstAccess,
+        module: 'Detecção de IPA/Sideload',
+      });
+    }
+
+    // Domain match for sideload services
+    const domainLower = (entry.domain || '').toLowerCase();
+    const matchedDomain = SIDELOAD_DOMAINS.find(d => domainLower.includes(d));
+    if (matchedDomain && !foundApps.has(`domain_${matchedDomain}`)) {
+      foundApps.add(`domain_${matchedDomain}`);
+      results.push({
+        id: genId(),
+        category: 'confirmed',
+        title: `Acesso a serviço de sideload: ${matchedDomain}`,
+        description: `O domínio "${entry.domain}" está associado ao serviço de sideloading "${matchedDomain}". Indica uso de ferramentas para instalar apps fora da App Store.`,
+        evidence: [
+          `Domínio: ${entry.domain}`,
+          `Serviço: ${matchedDomain}`,
+          `App: ${bid || 'N/A'}`,
+          `Timestamp: ${entry.firstAccess || 'N/A'}`,
+        ],
+        severity: 9,
+        timestamp: entry.firstAccess,
+        module: 'Detecção de IPA/Sideload',
+      });
+    }
+  }
+
+  return results;
+}
+
+// ============ APP STORE BEHAVIOR DETECTION ============
+
+function analyzeAppStoreBehavior(report: ParsedReport): AnalysisResult[] {
+  const results: AnalysisResult[] = [];
+  
+  const appStoreAccess: { time: Date; domain: string }[] = [];
+  const gameAccess: { time: Date; domain: string; bundleId: string }[] = [];
+
+  for (const entry of report.networkAccess) {
+    const ts = entry.firstAccess || entry.timeStamp;
+    if (!ts) continue;
+    const time = new Date(ts);
+    if (isNaN(time.getTime())) continue;
+
+    const domain = (entry.domain || '').toLowerCase();
+    const bid = (entry.bundleID || entry.context || '').toLowerCase();
+
+    // Detect App Store activity
+    if (bid.includes('com.apple.appstore') || domain.includes('apps.apple.com') ||
+        domain.includes('itunes.apple.com') || domain.includes('buy.itunes.apple.com') ||
+        domain.includes('p-appstore') || domain.includes('mesu.apple.com')) {
+      appStoreAccess.push({ time, domain });
+    }
+
+    // Detect game activity
+    if (GAME_BUNDLE_IDS.has(entry.bundleID || '') || GAME_DOMAINS.some(g => domain.includes(g))) {
+      gameAccess.push({ time, domain, bundleId: bid });
+    }
+  }
+
+  // Check if App Store was accessed right before a game session
+  for (const store of appStoreAccess) {
+    for (const game of gameAccess) {
+      const diffMin = (game.time.getTime() - store.time.getTime()) / 60000;
+      if (diffMin > 0 && diffMin < 15) {
+        results.push({
+          id: genId(),
+          category: 'suspect',
+          title: 'App Store acessada antes de sessão de jogo',
+          description: `A App Store foi acessada ${Math.round(diffMin)} minutos antes da sessão do jogo. Pode indicar download de app modificado ou cheat.`,
+          evidence: [
+            `App Store: ${store.domain} (${store.time.toLocaleString()})`,
+            `Jogo: ${game.domain} (${game.time.toLocaleString()})`,
+            `Intervalo: ${Math.round(diffMin)} min`,
+          ],
+          severity: 5,
+          timestamp: store.time.toISOString(),
+          module: 'Análise Comportamental',
+        });
+        break;
       }
     }
   }
