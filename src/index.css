@@ -66,15 +66,34 @@
     @apply border-border;
   }
 
+  html {
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: smooth;
+    overscroll-behavior: none;
+  }
+
   body {
     @apply bg-background text-foreground antialiased;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
+    overscroll-behavior-y: none;
   }
 
   h1, h2, h3, h4, h5, h6 {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
     font-weight: 600;
     letter-spacing: -0.02em;
+  }
+
+  /* Mobile touch optimization */
+  @media (max-width: 768px) {
+    * {
+      -webkit-touch-callout: none;
+    }
+    button, a, input {
+      touch-action: manipulation;
+    }
   }
 }
 
