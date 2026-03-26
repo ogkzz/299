@@ -47,16 +47,16 @@ export default function Index() {
       const events = monitor.stop();
 
       // Add network events to report
+      const autoBlacklisted = shouldAutoBlacklist(report, events);
+      if (autoBlacklisted) {
+        addToBlacklist(report, events, 'iPhone');
+      }
+
       const finalReport = {
         ...report,
         networkMonitorEvents: events,
-      };
-
-      // Auto-blacklist check
-      if (shouldAutoBlacklist(report, events)) {
-        addToBlacklist(report, events, 'iPhone');
-        finalReport.autoBlacklisted = true;
-      }
+        autoBlacklisted,
+      } as Record<string, unknown>;
 
       sessionStorage.setItem("299_report", JSON.stringify(finalReport));
       navigate("/results");
