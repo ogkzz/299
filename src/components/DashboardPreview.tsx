@@ -1,63 +1,72 @@
 import { motion } from "framer-motion";
-import { Shield, Activity, AlertTriangle, CheckCircle } from "lucide-react";
+import { Shield, AlertTriangle, CheckCircle, Terminal } from "lucide-react";
 
 export default function DashboardPreview() {
+  const fakeLines = [
+    { level: 'info', text: '[INFO] Magisk Scanner v2.0 initialized' },
+    { level: 'success', text: '[ OK ] Report parsed: 847 entries' },
+    { level: 'info', text: '[INFO] Running module: VPN/Proxy Detection...' },
+    { level: 'warn', text: '[WARN] Suspicious domain: proxy-relay.xyz' },
+    { level: 'success', text: '[ OK ] IP verified: 189.44.x.x (Mobile)' },
+    { level: 'error', text: '[ERRO] DETECTED: Sideload tool (ESign)' },
+    { level: 'info', text: '[INFO] Temporal correlation analysis...' },
+    { level: 'success', text: '[ OK ] Analysis complete. Risk: 73/100' },
+  ];
+
+  const levelClass: Record<string, string> = {
+    info: 'terminal-info',
+    success: 'terminal-success',
+    warn: 'terminal-warn',
+    error: 'terminal-error',
+  };
+
   return (
     <motion.div
-      initial={{ opacity: 0, y: 40 }}
+      initial={{ opacity: 0, y: 30 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: 0.6, duration: 0.8 }}
-      className="glass-panel rounded-2xl p-6 animate-pulse-glow"
+      transition={{ delay: 0.5, duration: 0.6 }}
+      className="space-y-3"
     >
-      <div className="flex items-center gap-2 mb-6">
-        <Activity className="w-4 h-4 text-muted-foreground" />
-        <span className="text-xs text-muted-foreground uppercase tracking-wider">Preview do Dashboard</span>
-      </div>
-
-      <div className="grid grid-cols-3 gap-4 mb-6">
+      {/* Mini stats */}
+      <div className="grid grid-cols-3 gap-2">
         {[
-          { icon: CheckCircle, label: "Limpo", value: "12", cls: "status-clean" },
-          { icon: AlertTriangle, label: "Suspeito", value: "3", cls: "status-suspect" },
-          { icon: Shield, label: "Confirmado", value: "1", cls: "status-confirmed" },
+          { icon: CheckCircle, label: "Clean", value: "12", cls: "status-clean" },
+          { icon: AlertTriangle, label: "Suspect", value: "3", cls: "status-suspect" },
+          { icon: Shield, label: "Confirmed", value: "1", cls: "status-confirmed" },
         ].map((item, i) => (
           <motion.div
             key={item.label}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.8 + i * 0.1 }}
-            className="glass-panel rounded-xl p-4 text-center"
+            transition={{ delay: 0.6 + i * 0.08 }}
+            className="glass-panel rounded-lg p-3 text-center"
           >
-            <item.icon className={`w-5 h-5 mx-auto mb-2 ${item.cls}`} />
-            <div className={`text-2xl font-semibold ${item.cls}`}>{item.value}</div>
-            <div className="text-xs text-muted-foreground mt-1">{item.label}</div>
+            <item.icon className={`w-4 h-4 mx-auto mb-1.5 ${item.cls}`} />
+            <div className={`text-lg font-bold ${item.cls}`}>{item.value}</div>
+            <div className="text-[10px] text-muted-foreground">{item.label}</div>
           </motion.div>
         ))}
       </div>
 
-      {/* Fake scan bars */}
-      <div className="space-y-3">
-        {[85, 60, 40, 90, 25].map((width, i) => (
-          <motion.div
-            key={i}
-            initial={{ width: 0 }}
-            animate={{ width: `${width}%` }}
-            transition={{ delay: 1 + i * 0.15, duration: 0.6 }}
-            className="h-2 rounded-full bg-foreground/10"
-          >
-            <div
-              className="h-full rounded-full"
-              style={{
-                width: "100%",
-                background: width > 70
-                  ? "hsl(var(--status-clean))"
-                  : width > 40
-                  ? "hsl(var(--status-suspect))"
-                  : "hsl(var(--status-confirmed))",
-                opacity: 0.6,
-              }}
-            />
-          </motion.div>
-        ))}
+      {/* Fake terminal */}
+      <div className="terminal-panel rounded-lg overflow-hidden animate-pulse-glow">
+        <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-secondary/30">
+          <Terminal className="w-3 h-3 text-primary" />
+          <span className="text-[10px] font-mono text-muted-foreground">preview</span>
+        </div>
+        <div className="py-1">
+          {fakeLines.map((line, i) => (
+            <motion.div
+              key={i}
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.8 + i * 0.12 }}
+              className="terminal-line"
+            >
+              <span className={`text-[10px] font-mono ${levelClass[line.level]}`}>{line.text}</span>
+            </motion.div>
+          ))}
+        </div>
       </div>
     </motion.div>
   );
