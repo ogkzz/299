@@ -103,7 +103,7 @@ export default function Index() {
             transition={{ type: "spring", stiffness: 200, delay: 0.1 }}
             className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/5 border border-primary/10 mb-4"
           >
-            <Shield className="w-3.5 h-3.5 text-primary" />
+            <Shield className="w-3.5 h-3.5 text-primary animate-dot-pulse" />
             <span className="text-[10px] font-mono text-primary uppercase tracking-wider">{t('hero.badge')}</span>
           </motion.div>
           <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight gradient-text mb-2">
@@ -156,13 +156,16 @@ export default function Index() {
 
           {/* Progress bar */}
           {isAnalyzing && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="glass-panel rounded-xl p-3">
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="glass-panel rounded-xl p-3 animate-shimmer">
               <div className="flex items-center justify-between mb-1.5">
-                <span className="text-[10px] text-muted-foreground font-mono">SCANNING</span>
+                <span className="text-[10px] text-muted-foreground font-mono flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-primary animate-dot-pulse" />
+                  SCANNING
+                </span>
                 <span className="text-[10px] text-primary font-mono font-bold">{progress}%</span>
               </div>
-              <div className="h-1 bg-secondary rounded-full overflow-hidden">
-                <motion.div className="h-full rounded-full bg-primary" animate={{ width: `${progress}%` }} transition={{ duration: 0.3 }} />
+              <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
+                <motion.div className="h-full rounded-full bg-gradient-to-r from-primary to-primary/60" animate={{ width: `${progress}%` }} transition={{ duration: 0.3 }} />
               </div>
               {networkEvents.length > 0 && (
                 <div className="mt-2 space-y-0.5">
@@ -205,7 +208,8 @@ export default function Index() {
               initial={{ opacity: 0, y: 15 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.4 + i * 0.06 }}
-              className="glass-panel glass-hover rounded-lg p-3"
+              whileHover={{ y: -3, transition: { duration: 0.2 } }}
+              className="glass-panel glass-hover rounded-lg p-3 cursor-default"
             >
               <f.icon className="w-3.5 h-3.5 text-primary/60 mb-1.5" />
               <h3 className="text-[10px] font-semibold text-foreground">{f.title}</h3>
