@@ -225,4 +225,47 @@
   .terminal-cursor {
     animation: blink 1s step-end infinite;
   }
+
+  /* Subtle float animation for feature cards */
+  @keyframes float {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-3px); }
+  }
+  .animate-float {
+    animation: float 4s ease-in-out infinite;
+  }
+
+  /* Shimmer effect for scanning state */
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+  .animate-shimmer {
+    background: linear-gradient(
+      90deg,
+      hsl(var(--primary) / 0.05) 25%,
+      hsl(var(--primary) / 0.15) 50%,
+      hsl(var(--primary) / 0.05) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 2s ease-in-out infinite;
+  }
+
+  /* Radar sweep for the risk gauge */
+  @keyframes radar-sweep {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+  .animate-radar {
+    animation: radar-sweep 3s linear infinite;
+  }
+
+  /* Status dot pulse */
+  @keyframes dot-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(1.3); }
+  }
+  .animate-dot-pulse {
+    animation: dot-pulse 2s ease-in-out infinite;
+  }
 }

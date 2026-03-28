@@ -474,14 +474,21 @@ function analyzeSuspiciousDomains(report: ParsedReport): AnalysisResult[] {
       }
     }
 
-    // High-risk TLD check (only flag if domain is not from known legitimate owners)
+    // High-risk TLD check — only flag if domain has suspicious patterns AND is not from known owners
+    // This reduces false positives from legitimate services using .xyz/.link etc.
     const tld = getTLD(domain);
     if (HIGH_RISK_TLDS.has(tld) && !flagged.has(domain)) {
       const owner = (entry.owner || '').toLowerCase();
-      const isKnownLegit = ['apple', 'google', 'facebook', 'meta', 'microsoft', 'amazon', 'cloudflare']
-        .some(co => owner.includes(co));
+      const bid = (entry.bundleID || entry.context || '').toLowerCase();
+      const isKnownLegit = ['apple', 'google', 'facebook', 'meta', 'microsoft', 'amazon', 'cloudflare',
+        'akamai', 'fastly', 'tiktok', 'bytedance', 'twitter', 'snap', 'spotify', 'netflix']
+        .some(co => owner.includes(co) || domain.includes(co));
       
-      if (!isKnownLegit) {
+      // Also skip if accessed by well-known apps (reduces FPs from ad SDKs)
+      const isKnownApp = bid.includes('apple') || bid.includes('google') || bid.includes('facebook');
+      
+      // Only flag if hits > 3 (persistent access, not one-off ad redirect)
+      if (!isKnownLegit && !isKnownApp && entry.hits > 3) {
         flagged.add(domain);
         results.push({
           id: genId(),
@@ -493,8 +500,9 @@ function analyzeSuspiciousDomains(report: ParsedReport): AnalysisResult[] {
             `TLD: ${tld}`,
             `Proprietário: ${owner || 'Desconhecido'}`,
             `App: ${entry.bundleID || 'N/A'}`,
+            `Acessos: ${entry.hits}`,
           ],
-          severity: 4,
+          severity: 3,
           timestamp: entry.firstAccess,
           module: 'Análise de TLD',
         });
@@ -716,16 +724,17 @@ function analyzeDatacenterDomains(domainIPMap: Map<string, IPInfo>, networkAcces
 function analyzeFileIntegrity(report: ParsedReport, rawContent: string): AnalysisResult[] {
   const results: AnalysisResult[] = [];
 
-  // Check entries count
+  // Check entries count — low count alone is NOT suspicious for new devices
+  // Only flag if file size suggests data was stripped
   const totalEntries = report.networkAccess.length + report.dataAccess.length;
-  if (totalEntries < 5 && rawContent.length > 100) {
+  if (totalEntries < 3 && rawContent.length > 500) {
     results.push({
       id: genId(),
       category: 'suspect',
       title: 'Arquivo com poucos registros',
-      description: `O relatório contém apenas ${totalEntries} entradas válidas. Pode indicar um relatório truncado, recém-resetado ou manipulado.`,
+      description: `O relatório contém apenas ${totalEntries} entradas válidas para um arquivo de ${(rawContent.length / 1024).toFixed(1)} KB. Pode indicar dados removidos.`,
       evidence: [`Total de entradas: ${totalEntries}`, `Tamanho do arquivo: ${(rawContent.length / 1024).toFixed(1)} KB`],
-      severity: 5,
+      severity: 4,
       module: 'Integridade do Arquivo',
     });
   }
@@ -812,27 +821,30 @@ function analyzeNetworkBehavior(report: ParsedReport): AnalysisResult[] {
     domainsByApp.get(bid)!.add(entry.domain);
   }
 
-  // Check for apps accessing unusual number of unique domains
+  // Check for apps with suspicious domain patterns — require multiple suspicious domains
+  // to avoid false positives from apps with heavy analytics/ad SDKs
   for (const [app, domains] of domainsByApp) {
-    if (domains.size > 100) {
-      const suspiciousDomains = [...domains].filter(d => 
-        SUSPICIOUS_DOMAIN_PATTERNS.some(p => p.test(d))
-      );
-      if (suspiciousDomains.length > 0) {
-        results.push({
-          id: genId(),
-          category: 'suspect',
-          title: `App com atividade de rede anômala: ${app}`,
-          description: `O app ${app} acessou ${domains.size} domínios únicos, incluindo ${suspiciousDomains.length} suspeitos.`,
-          evidence: [
-            `App: ${app}`,
-            `Domínios únicos: ${domains.size}`,
-            `Domínios suspeitos: ${suspiciousDomains.join(', ')}`,
-          ],
-          severity: 5,
-          module: 'Análise Comportamental',
-        });
-      }
+    // Skip known system/Apple apps
+    if (app.includes('apple') || app.includes('com.google') || app === 'unknown') continue;
+    
+    const suspiciousDomains = [...domains].filter(d => 
+      SUSPICIOUS_DOMAIN_PATTERNS.some(p => p.test(d))
+    );
+    // Only flag if >50% of domains are suspicious OR there are 5+ suspicious domains
+    if (suspiciousDomains.length >= 5 && domains.size > 20) {
+      results.push({
+        id: genId(),
+        category: 'suspect',
+        title: `App com atividade de rede anômala: ${app}`,
+        description: `O app ${app} acessou ${domains.size} domínios únicos, incluindo ${suspiciousDomains.length} suspeitos.`,
+        evidence: [
+          `App: ${app}`,
+          `Domínios únicos: ${domains.size}`,
+          `Domínios suspeitos: ${suspiciousDomains.slice(0, 5).join(', ')}`,
+        ],
+        severity: 5,
+        module: 'Análise Comportamental',
+      });
     }
   }
 
@@ -983,17 +995,19 @@ function calculateRiskScore(results: AnalysisResult[]): number {
 
   let score = 0;
 
-  // Weighted scoring
+  // Only count high-severity confirmed findings strongly
   for (const r of confirmed) {
-    score += r.severity * 2.5;
+    score += r.severity >= 8 ? r.severity * 2 : r.severity * 1.2;
   }
+  // Suspects contribute much less to avoid inflating score
   for (const r of suspect) {
-    score += r.severity * 1;
+    score += r.severity >= 7 ? r.severity * 0.6 : r.severity * 0.3;
   }
 
-  // Bonus for multiple confirmed findings (cross-correlation)
-  if (confirmed.length >= 3) score += 15;
-  if (confirmed.length >= 5) score += 10;
+  // Cross-correlation bonus only when multiple DIFFERENT modules confirm issues
+  const confirmedModules = new Set(confirmed.map(r => r.module));
+  if (confirmedModules.size >= 3) score += 10;
+  if (confirmedModules.size >= 5) score += 8;
 
   return Math.min(100, Math.round(score));
 }
