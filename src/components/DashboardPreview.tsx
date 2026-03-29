@@ -27,7 +27,6 @@ export default function DashboardPreview() {
       transition={{ delay: 0.5, duration: 0.6 }}
       className="space-y-3"
     >
-      {/* Mini stats */}
       <div className="grid grid-cols-3 gap-2">
         {[
           { icon: CheckCircle, label: "Clean", value: "12", cls: "status-clean" },
@@ -48,7 +47,6 @@ export default function DashboardPreview() {
         ))}
       </div>
 
-      {/* Fake terminal */}
       <div className="terminal-panel rounded-lg overflow-hidden animate-pulse-glow">
         <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-secondary/30">
           <Terminal className="w-3 h-3 text-primary" />
