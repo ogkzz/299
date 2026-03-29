@@ -71,7 +71,6 @@ export default function Index() {
       addLog('success', `Analysis complete. Risk score: ${report.riskScore}/100`);
       sessionStorage.setItem("magisk_report", JSON.stringify(finalReport));
 
-      // Small delay to let user see final log
       setTimeout(() => navigate("/results"), 800);
     } catch (err) {
       monitor.stop();
@@ -156,7 +155,7 @@ export default function Index() {
 
           {/* Progress bar */}
           {isAnalyzing && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="glass-panel rounded-xl p-3 animate-shimmer">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="glass-panel rounded-xl p-3 animate-shimmer">
               <div className="flex items-center justify-between mb-1.5">
                 <span className="text-[10px] text-muted-foreground font-mono flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-primary animate-dot-pulse" />

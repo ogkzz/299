@@ -11,7 +11,6 @@ export default function Navbar() {
   const { t, locale, setLocale } = useI18n();
   const langRef = useRef<HTMLDivElement>(null);
 
-  // Close lang dropdown on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (langRef.current && !langRef.current.contains(e.target as Node)) setLangOpen(false);

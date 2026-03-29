@@ -14,12 +14,10 @@ export default function FileUpload({ onFileContent, isAnalyzing }: FileUploadPro
   const [isDragOver, setIsDragOver] = useState(false);
 
   const handleFile = useCallback((f: File) => {
-    // Validate file size (max 20MB)
     if (f.size > 20 * 1024 * 1024) {
       alert('File too large. Maximum 20MB.');
       return;
     }
-    // Validate extension
     const ext = f.name.split('.').pop()?.toLowerCase();
     if (!['json', 'ndjson', 'txt'].includes(ext || '')) {
       alert('Invalid file format. Use .json, .ndjson or .txt');
@@ -44,7 +42,7 @@ export default function FileUpload({ onFileContent, isAnalyzing }: FileUploadPro
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: 0.15 }}
       className={`glass-panel rounded-xl transition-all duration-200 ${
-        isDragOver ? "border-primary/30 shadow-[var(--glow-green)]" : ""
+        isDragOver ? "border-primary/30 shadow-[var(--glow-blue)]" : ""
       }`}
       onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
       onDragLeave={() => setIsDragOver(false)}
