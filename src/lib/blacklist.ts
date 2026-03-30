@@ -48,8 +48,8 @@ export async function getBlacklist(): Promise<BlacklistEntry[]> {
     reason: row.reason,
     risk_score: row.risk_score,
     banned_at: row.banned_at,
-    findings: (row.findings as string[]) || [],
-    network_events: (row.network_events as NetworkEvent[]) || [],
+    findings: (row.findings as unknown as string[]) || [],
+    network_events: (row.network_events as unknown as NetworkEvent[]) || [],
     ip_info: row.ip_info as BlacklistEntry['ip_info'],
   }));
 }
@@ -95,15 +95,15 @@ export async function addToBlacklist(
 
   const { data, error } = await supabase
     .from('blacklist')
-    .insert(entry)
+    .insert(entry as any)
     .select()
     .single();
   
   if (error || !data) return null;
   return {
     ...data,
-    findings: (data.findings as string[]) || [],
-    network_events: (data.network_events as NetworkEvent[]) || [],
+    findings: (data.findings as unknown as string[]) || [],
+    network_events: (data.network_events as unknown as NetworkEvent[]) || [],
     ip_info: data.ip_info as BlacklistEntry['ip_info'],
   };
 }
