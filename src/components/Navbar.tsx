@@ -31,47 +31,47 @@ export default function Navbar() {
       animate={{ y: 0, opacity: 1 }}
       className="fixed top-0 left-0 right-0 z-50 glass-panel-strong border-b border-border"
     >
-      <div className="container mx-auto px-4 sm:px-6 h-12 flex items-center justify-between">
-        <Link to="/" className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded-md bg-primary/10 border border-primary/20 flex items-center justify-center">
-            <Shield className="w-3.5 h-3.5 text-primary" />
+      <div className="container mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
+        <Link to="/" className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center">
+            <Shield className="w-4 h-4 text-primary" />
           </div>
           <span className="text-sm font-bold tracking-tight text-foreground">MAGISK</span>
-          <span className="text-[10px] text-muted-foreground font-mono hidden sm:inline">v2.0</span>
+          <span className="text-[10px] text-primary/60 font-mono hidden sm:inline px-1.5 py-0.5 rounded bg-primary/5">v2.0</span>
         </Link>
 
         {/* Desktop */}
-        <div className="hidden md:flex items-center gap-0.5">
+        <div className="hidden md:flex items-center gap-1">
           {links.map(link => (
             <Link
               key={link.to}
               to={link.to}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+              className={`px-3.5 py-2 rounded-lg text-xs font-medium transition-all ${
                 location.pathname === link.to
-                  ? "bg-primary/10 text-primary"
-                  : "text-muted-foreground hover:text-foreground"
+                  ? "bg-primary/10 text-primary shadow-sm"
+                  : "text-muted-foreground hover:text-foreground hover:bg-secondary"
               }`}
             >
               {link.label}
             </Link>
           ))}
 
-          <div className="relative ml-1" ref={langRef}>
+          <div className="relative ml-2" ref={langRef}>
             <button
               onClick={() => setLangOpen(!langOpen)}
-              className="flex items-center gap-1 px-2 py-1.5 rounded-md text-xs text-muted-foreground hover:text-foreground transition-colors"
+              className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-all"
             >
-              <Globe className="w-3 h-3" />
+              <Globe className="w-3.5 h-3.5" />
               {LOCALE_OPTIONS.find(o => o.value === locale)?.flag}
             </button>
             {langOpen && (
-              <div className="absolute right-0 top-full mt-1 glass-panel-strong rounded-md border border-border py-1 min-w-[120px] z-50">
+              <div className="absolute right-0 top-full mt-1.5 glass-panel-strong rounded-xl border border-border py-1.5 min-w-[130px] z-50 shadow-xl">
                 {LOCALE_OPTIONS.map(opt => (
                   <button
                     key={opt.value}
                     onClick={() => { setLocale(opt.value); setLangOpen(false); }}
-                    className={`w-full px-3 py-1.5 text-left text-xs flex items-center gap-2 transition-colors ${
-                      locale === opt.value ? 'text-primary bg-primary/5' : 'text-muted-foreground hover:text-foreground'
+                    className={`w-full px-3.5 py-2 text-left text-xs flex items-center gap-2.5 transition-colors ${
+                      locale === opt.value ? 'text-primary bg-primary/5' : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
                     }`}
                   >
                     <span>{opt.flag}</span> {opt.label}
@@ -85,16 +85,16 @@ export default function Navbar() {
         {/* Mobile */}
         <div className="flex md:hidden items-center gap-1">
           <div className="relative" ref={langRef}>
-            <button onClick={() => setLangOpen(!langOpen)} className="p-2 rounded-md text-muted-foreground">
+            <button onClick={() => setLangOpen(!langOpen)} className="p-2.5 rounded-lg text-muted-foreground hover:bg-secondary">
               <Globe className="w-4 h-4" />
             </button>
             {langOpen && (
-              <div className="absolute right-0 top-full mt-1 glass-panel-strong rounded-md border border-border py-1 min-w-[110px] z-50">
+              <div className="absolute right-0 top-full mt-1.5 glass-panel-strong rounded-xl border border-border py-1.5 min-w-[120px] z-50 shadow-xl">
                 {LOCALE_OPTIONS.map(opt => (
                   <button
                     key={opt.value}
                     onClick={() => { setLocale(opt.value); setLangOpen(false); }}
-                    className={`w-full px-3 py-1.5 text-left text-xs flex items-center gap-2 ${
+                    className={`w-full px-3 py-2 text-left text-xs flex items-center gap-2 ${
                       locale === opt.value ? 'text-primary' : 'text-muted-foreground'
                     }`}
                   >
@@ -104,7 +104,7 @@ export default function Navbar() {
               </div>
             )}
           </div>
-          <button onClick={() => setMobileOpen(!mobileOpen)} className="p-2 rounded-md text-muted-foreground">
+          <button onClick={() => setMobileOpen(!mobileOpen)} className="p-2.5 rounded-lg text-muted-foreground hover:bg-secondary">
             {mobileOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
           </button>
         </div>
@@ -112,14 +112,14 @@ export default function Navbar() {
 
       {mobileOpen && (
         <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="md:hidden border-t border-border">
-          <div className="container mx-auto px-4 py-2 space-y-0.5">
+          <div className="container mx-auto px-4 py-2 space-y-1">
             {links.map(link => (
               <Link
                 key={link.to}
                 to={link.to}
                 onClick={() => setMobileOpen(false)}
-                className={`block px-3 py-2 rounded-md text-xs font-medium transition-colors ${
-                  location.pathname === link.to ? "bg-primary/10 text-primary" : "text-muted-foreground"
+                className={`block px-4 py-2.5 rounded-lg text-xs font-medium transition-colors ${
+                  location.pathname === link.to ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-secondary"
                 }`}
               >
                 {link.label}

@@ -88,11 +88,13 @@ const VPN_PROXY_BUNDLE_IDS = new Set([
   'com.zenguard.ZenMate', 'org.torproject.ios.TorBrowser', 'com.psiphon3',
   'com.cloudflare.1dot1dot1dot1', 'com.shadowsocks.ios', 'com.wireguard.ios',
   'com.openvpn.connect', 'com.betternet.Betternet', 'com.connectify.speedify',
-  'com.AnchorFree.AlohaVPN', 'com.apple.networkextension', 'com.noodlewerk.shadowrocket',
+  'com.AnchorFree.AlohaVPN', 'com.noodlewerk.shadowrocket',
   'com.lemonclove.quantumult', 'com.west2online.Shadowrocket', 'com.surge.ios',
   'com.particleapps.Thunder', 'com.vpnmaster.ios', 'com.sticktight.TurboVPN',
   'com.v2rayx.ios', 'com.ssrconnectpro', 'com.clashinios.proxy',
 ]);
+
+// Removed 'com.apple.networkextension' — it's a system framework, not a VPN app (false positive source)
 
 const VPN_PROXY_KEYWORDS_IN_BUNDLEID = [
   'vpn', 'proxy', 'tunnel', 'shadowsock', 'wireguard', 'openvpn',
@@ -101,15 +103,17 @@ const VPN_PROXY_KEYWORDS_IN_BUNDLEID = [
 ];
 
 const SUSPICIOUS_DOMAIN_PATTERNS = [
-  /proxy/i, /vpngate/i, /\.onion\./i, /tor(exit|node|relay)/i,
-  /socks[45]/i, /mitm/i, /intercept/i, /sniffer/i,
+  /^proxy\./i, /\.proxy\./i, /vpngate/i, /\.onion\./i, /tor(exit|node|relay)/i,
+  /socks[45]\./i, /mitm\./i, /intercept\./i, /sniffer\./i,
   /packet.*capture/i, /ssl.*strip/i, /cert.*spoof/i,
 ];
+// Made patterns more specific with anchors/dots to avoid matching substrings in legitimate domains
 
 const HIGH_RISK_TLDS = new Set([
-  '.xyz', '.top', '.click', '.link', '.club', '.icu', '.buzz',
-  '.gq', '.ml', '.tk', '.cf', '.ga', '.surf',
+  '.xyz', '.top', '.click', '.icu', '.buzz',
+  '.gq', '.ml', '.tk', '.cf', '.ga',
 ]);
+// Removed '.link', '.club', '.surf' — too many legitimate services use these
 
 const DATACENTER_INDICATORS = [
   'amazon', 'aws', 'google cloud', 'gcp', 'azure', 'microsoft',
@@ -132,7 +136,6 @@ const GAME_DOMAINS = [
   'pubg', 'tencent', 'riotgames', 'activision', 'supercell',
 ];
 
-// IPA Sideloading / Signing tools detection
 const SIDELOAD_BUNDLE_IDS = new Set([
   'com.SideStore.SideStore', 'com.rileytestut.AltStore',
   'com.rileytestut.AltStore.Beta', 'com.rileytestut.Delta',
@@ -152,8 +155,9 @@ const SIDELOAD_KEYWORDS_IN_BUNDLEID = [
   'sideload', 'signtool', 'scarlet', 'feather', 'buildstore',
   'ipastore', 'topstore', 'vshare', '25pp', 'tutuapp',
   'appvalley', 'tweakbox', 'ignition', 'trollstore',
-  'cydia', 'sileo', 'zebra', 'jailbreak',
+  'cydia', 'sileo', 'zebra',
 ];
+// Removed 'jailbreak' keyword — too generic, causes FP with news articles etc.
 
 const SIDELOAD_DOMAINS = [
   'esign.yyyue.xyz', 'gbox.run', 'ksign.cc', 'sidestore.io',
@@ -164,6 +168,27 @@ const SIDELOAD_DOMAINS = [
   'appvalley.vip', 'tutuapp.vip', 'tweakboxapp.com',
   'next.bsstore.net', 'ignition.fun',
 ];
+
+// Known legitimate domain owners — expanded to reduce false positives
+const KNOWN_LEGITIMATE_OWNERS = [
+  'apple', 'google', 'facebook', 'meta', 'microsoft', 'amazon', 'cloudflare',
+  'akamai', 'fastly', 'tiktok', 'bytedance', 'twitter', 'snap', 'spotify',
+  'netflix', 'adobe', 'oracle', 'ibm', 'salesforce', 'shopify', 'stripe',
+  'twitch', 'reddit', 'pinterest', 'linkedin', 'whatsapp', 'telegram',
+  'discord', 'zoom', 'slack', 'dropbox', 'github', 'gitlab', 'stackoverflow',
+  'mozilla', 'samsung', 'huawei', 'xiaomi', 'oneplus', 'garena', 'tencent',
+  'riot', 'supercell', 'activision', 'unity', 'appsflyer', 'adjust',
+  'branch', 'firebase', 'crashlytics', 'sentry', 'amplitude', 'mixpanel',
+  'segment', 'datadog', 'newrelic', 'pendo',
+];
+
+// Known legitimate apps that should never trigger VPN keyword detection
+const KNOWN_SYSTEM_APPS = new Set([
+  'com.apple.', 'com.google.', 'com.facebook.', 'com.meta.',
+  'com.microsoft.', 'com.amazon.', 'com.netflix.',
+  'com.spotify.', 'com.snapchat.', 'com.zhiliaoapp.musically',
+  'com.burbn.instagram', 'com.atebits.Tweetie2',
+]);
 
 // ============ HELPERS ============
 
@@ -176,6 +201,16 @@ function getTLD(domain: string): string {
   const parts = domain.split('.');
   if (parts.length < 2) return '';
   return '.' + parts[parts.length - 1];
+}
+
+function isKnownSystemApp(bid: string): boolean {
+  const lower = bid.toLowerCase();
+  return [...KNOWN_SYSTEM_APPS].some(prefix => lower.startsWith(prefix));
+}
+
+function isKnownLegitDomain(domain: string, owner: string): boolean {
+  const combined = `${domain} ${owner}`.toLowerCase();
+  return KNOWN_LEGITIMATE_OWNERS.some(co => combined.includes(co));
 }
 
 // ============ PARSING ============
@@ -192,9 +227,6 @@ export function parseNDJSON(raw: string): ParsedReport {
       const entry = JSON.parse(line);
       rawEntries.push(entry);
 
-      // iOS App Privacy Report has two main record types:
-      // 1. Network activity (has "domain" field)
-      // 2. Data access (has "accessor" field)
       if (entry.domain || entry.networkActivity) {
         if (entry.networkActivity && Array.isArray(entry.networkActivity)) {
           for (const na of entry.networkActivity) {
@@ -266,28 +298,29 @@ export function parseNDJSON(raw: string): ParsedReport {
         }
       }
     } catch {
-      throw new Error('Formato de arquivo inválido. Exporte o relatório de privacidade do seu iPhone em Configurações > Privacidade > Relatório de Privacidade do App.');
+      throw new Error('Invalid file format. Export the privacy report from your iPhone in Settings > Privacy > App Privacy Report.');
     }
   }
 
   return { networkAccess, dataAccess, raw: rawEntries };
 }
 
-// ============ IP ENRICHMENT (Real API) ============
+// ============ IP ENRICHMENT ============
 
 export async function enrichIP(ip: string): Promise<IPInfo | null> {
   if (!ip || ip === 'N/A' || ip.trim() === '') return null;
 
+  // Validate IP format
+  const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
+  if (!ipRegex.test(ip.trim())) return null;
+
   try {
-    // Using ip-api.com (free, supports CORS, no key needed)
     const res = await fetch(
       `http://ip-api.com/json/${encodeURIComponent(ip.trim())}?fields=status,message,country,countryCode,region,city,isp,org,as,mobile,proxy,hosting,lat,lon,reverse,query`,
       { signal: AbortSignal.timeout(8000) }
     );
-    
     if (!res.ok) return null;
     const data = await res.json();
-    
     if (data.status === 'fail') return null;
 
     return {
@@ -301,7 +334,7 @@ export async function enrichIP(ip: string): Promise<IPInfo | null> {
       as: data.as || '',
       hosting: data.hosting === true,
       proxy: data.proxy === true,
-      vpn: data.proxy === true, // ip-api uses proxy field for VPN too
+      vpn: data.proxy === true,
       mobile: data.mobile === true,
       lat: data.lat || 0,
       lon: data.lon || 0,
@@ -312,7 +345,6 @@ export async function enrichIP(ip: string): Promise<IPInfo | null> {
   }
 }
 
-// Try alternative API if first fails
 async function enrichIPFallback(ip: string): Promise<IPInfo | null> {
   try {
     const res = await fetch(
@@ -354,8 +386,7 @@ export async function getIPInfo(ip: string): Promise<IPInfo | null> {
 
 async function checkDomainsViaIP(domains: string[]): Promise<Map<string, IPInfo>> {
   const results = new Map<string, IPInfo>();
-  // Check up to 20 unique domains to avoid rate limiting
-  const domainsToCheck = domains.slice(0, 20);
+  const domainsToCheck = domains.slice(0, 10); // Reduced from 20 to 10 for performance
   
   for (const domain of domainsToCheck) {
     try {
@@ -367,8 +398,7 @@ async function checkDomainsViaIP(domains: string[]): Promise<Map<string, IPInfo>
         const data = await res.json();
         if (data.status === 'success') {
           results.set(domain, {
-            ip: data.query || '',
-            country: '', countryCode: '', region: '', city: '',
+            ip: data.query || '', country: '', countryCode: '', region: '', city: '',
             isp: data.isp || '', org: data.org || '', as: data.as || '',
             hosting: data.hosting === true,
             proxy: data.proxy === true,
@@ -377,10 +407,9 @@ async function checkDomainsViaIP(domains: string[]): Promise<Map<string, IPInfo>
           });
         }
       }
-      // Rate limiting: ip-api allows 45 req/min on free tier
       await new Promise(r => setTimeout(r, 1400));
     } catch {
-      // Skip failed lookups
+      // Skip
     }
   }
 
@@ -397,44 +426,48 @@ function analyzeVPNApps(report: ParsedReport): AnalysisResult[] {
     const bid = entry.bundleID || entry.context || '';
     if (!bid) continue;
 
+    // Skip system apps entirely
+    if (isKnownSystemApp(bid)) continue;
+
     // Exact match
     if (VPN_PROXY_BUNDLE_IDS.has(bid) && !foundApps.has(bid)) {
       foundApps.add(bid);
       results.push({
         id: genId(),
         category: 'confirmed',
-        title: `App de VPN/Proxy instalado: ${bid}`,
-        description: `O bundle ID "${bid}" corresponde a um aplicativo conhecido de VPN, proxy ou túnel. Este app foi detectado realizando atividade de rede.`,
+        title: `VPN/Proxy app detected: ${bid}`,
+        description: `The bundle ID "${bid}" matches a known VPN, proxy or tunnel application actively making network requests.`,
         evidence: [
           `Bundle ID: ${bid}`,
-          `Domínio acessado: ${entry.domain}`,
+          `Domain accessed: ${entry.domain}`,
           `Timestamp: ${entry.firstAccess || 'N/A'}`,
           `Hits: ${entry.hits}`,
         ],
         severity: 9,
         timestamp: entry.firstAccess,
-        module: 'Detecção de Apps VPN/Proxy',
+        module: 'VPN/Proxy Detection',
       });
     }
 
-    // Keyword match in bundle ID
+    // Keyword match — only if NOT a system app and has significant activity
     const bidLower = bid.toLowerCase();
     const matchedKw = VPN_PROXY_KEYWORDS_IN_BUNDLEID.find(kw => bidLower.includes(kw));
-    if (matchedKw && !foundApps.has(bid)) {
+    if (matchedKw && !foundApps.has(bid) && entry.hits >= 3) {
       foundApps.add(bid);
       results.push({
         id: genId(),
         category: 'suspect',
-        title: `App possivelmente de VPN/Proxy: ${bid}`,
-        description: `O bundle ID contém a palavra-chave "${matchedKw}", associada a ferramentas de VPN/proxy.`,
+        title: `Possible VPN/Proxy app: ${bid}`,
+        description: `The bundle ID contains keyword "${matchedKw}", associated with VPN/proxy tools. Requires ${entry.hits} hits for confirmation.`,
         evidence: [
           `Bundle ID: ${bid}`,
-          `Keyword detectada: ${matchedKw}`,
-          `Domínio: ${entry.domain}`,
+          `Keyword: ${matchedKw}`,
+          `Domain: ${entry.domain}`,
+          `Hits: ${entry.hits}`,
         ],
-        severity: 7,
+        severity: 6,
         timestamp: entry.firstAccess,
-        module: 'Detecção de Apps VPN/Proxy',
+        module: 'VPN/Proxy Detection',
       });
     }
   }
@@ -450,61 +483,56 @@ function analyzeSuspiciousDomains(report: ParsedReport): AnalysisResult[] {
     const domain = entry.domain?.toLowerCase();
     if (!domain || flagged.has(domain)) continue;
 
-    // Pattern matching
-    for (const pattern of SUSPICIOUS_DOMAIN_PATTERNS) {
-      if (pattern.test(domain)) {
-        flagged.add(domain);
-        results.push({
-          id: genId(),
-          category: 'suspect',
-          title: `Domínio suspeito: ${domain}`,
-          description: `O domínio corresponde ao padrão "${pattern.source}", frequentemente associado a ferramentas de proxy/VPN/interceptação.`,
-          evidence: [
-            `Domínio: ${domain}`,
-            `Padrão: ${pattern.source}`,
-            `App: ${entry.bundleID || entry.context || 'N/A'}`,
-            `Acessos: ${entry.hits}`,
-            `Primeiro acesso: ${entry.firstAccess || 'N/A'}`,
-          ],
-          severity: 6,
-          timestamp: entry.firstAccess,
-          module: 'Análise de Domínios',
-        });
-        break;
+    // Skip known legitimate domains
+    if (isKnownLegitDomain(domain, entry.owner || '')) continue;
+
+    // Pattern matching — requires hits >= 2 to avoid one-off redirects
+    if (entry.hits >= 2) {
+      for (const pattern of SUSPICIOUS_DOMAIN_PATTERNS) {
+        if (pattern.test(domain)) {
+          flagged.add(domain);
+          results.push({
+            id: genId(),
+            category: 'suspect',
+            title: `Suspicious domain: ${domain}`,
+            description: `Domain matches pattern "${pattern.source}", frequently associated with proxy/VPN/interception tools.`,
+            evidence: [
+              `Domain: ${domain}`,
+              `Pattern: ${pattern.source}`,
+              `App: ${entry.bundleID || entry.context || 'N/A'}`,
+              `Hits: ${entry.hits}`,
+            ],
+            severity: 5,
+            timestamp: entry.firstAccess,
+            module: 'Domain Analysis',
+          });
+          break;
+        }
       }
     }
 
-    // High-risk TLD check — only flag if domain has suspicious patterns AND is not from known owners
-    // This reduces false positives from legitimate services using .xyz/.link etc.
+    // High-risk TLD — much stricter: requires hits > 5 AND unknown owner AND not from known apps
     const tld = getTLD(domain);
     if (HIGH_RISK_TLDS.has(tld) && !flagged.has(domain)) {
-      const owner = (entry.owner || '').toLowerCase();
       const bid = (entry.bundleID || entry.context || '').toLowerCase();
-      const isKnownLegit = ['apple', 'google', 'facebook', 'meta', 'microsoft', 'amazon', 'cloudflare',
-        'akamai', 'fastly', 'tiktok', 'bytedance', 'twitter', 'snap', 'spotify', 'netflix']
-        .some(co => owner.includes(co) || domain.includes(co));
+      const isKnownApp = isKnownSystemApp(bid);
       
-      // Also skip if accessed by well-known apps (reduces FPs from ad SDKs)
-      const isKnownApp = bid.includes('apple') || bid.includes('google') || bid.includes('facebook');
-      
-      // Only flag if hits > 3 (persistent access, not one-off ad redirect)
-      if (!isKnownLegit && !isKnownApp && entry.hits > 3) {
+      if (!isKnownLegitDomain(domain, entry.owner || '') && !isKnownApp && entry.hits > 5) {
         flagged.add(domain);
         results.push({
           id: genId(),
           category: 'suspect',
-          title: `TLD de alto risco: ${domain}`,
-          description: `O domínio usa TLD "${tld}", frequentemente usado por serviços maliciosos ou temporários. O proprietário não é reconhecido como legítimo.`,
+          title: `High-risk TLD: ${domain}`,
+          description: `Domain uses TLD "${tld}" frequently used by malicious or temporary services, with ${entry.hits} persistent accesses.`,
           evidence: [
-            `Domínio: ${domain}`,
+            `Domain: ${domain}`,
             `TLD: ${tld}`,
-            `Proprietário: ${owner || 'Desconhecido'}`,
-            `App: ${entry.bundleID || 'N/A'}`,
-            `Acessos: ${entry.hits}`,
+            `Owner: ${entry.owner || 'Unknown'}`,
+            `Hits: ${entry.hits}`,
           ],
           severity: 3,
           timestamp: entry.firstAccess,
-          module: 'Análise de TLD',
+          module: 'TLD Analysis',
         });
       }
     }
@@ -517,100 +545,98 @@ function analyzeIPInfo(ipInfo: IPInfo | null): AnalysisResult[] {
   if (!ipInfo) return [];
   const results: AnalysisResult[] = [];
 
-  // Check if IP is from a hosting/datacenter provider
   if (ipInfo.hosting) {
     results.push({
       id: genId(),
       category: 'confirmed',
-      title: `IP de datacenter/hosting detectado`,
-      description: `O IP ${ipInfo.ip} pertence a um provedor de hosting/datacenter. Dispositivos móveis reais não usam IPs de datacenter.`,
+      title: `Datacenter/hosting IP detected`,
+      description: `IP ${ipInfo.ip} belongs to a hosting/datacenter provider. Real mobile devices don't use datacenter IPs.`,
       evidence: [
         `IP: ${ipInfo.ip}`,
         `ISP: ${ipInfo.isp}`,
-        `Organização: ${ipInfo.org}`,
+        `Org: ${ipInfo.org}`,
         `ASN: ${ipInfo.as}`,
-        `Localização: ${ipInfo.city}, ${ipInfo.country}`,
+        `Location: ${ipInfo.city}, ${ipInfo.country}`,
       ],
       severity: 10,
-      module: 'Análise de IP',
+      module: 'IP Analysis',
     });
   }
 
-  // Check if proxy/VPN detected by API
   if (ipInfo.proxy || ipInfo.vpn) {
     results.push({
       id: genId(),
       category: 'confirmed',
-      title: `Proxy/VPN detectado no IP`,
-      description: `O IP ${ipInfo.ip} foi identificado como proxy ou VPN por serviço de inteligência de IP.`,
+      title: `Proxy/VPN detected on IP`,
+      description: `IP ${ipInfo.ip} was identified as proxy or VPN by IP intelligence service.`,
       evidence: [
         `IP: ${ipInfo.ip}`,
-        `Proxy: ${ipInfo.proxy ? 'Sim' : 'Não'}`,
+        `Proxy: ${ipInfo.proxy ? 'Yes' : 'No'}`,
         `ISP: ${ipInfo.isp}`,
         `ASN: ${ipInfo.as}`,
       ],
       severity: 10,
-      module: 'Análise de IP',
+      module: 'IP Analysis',
     });
   }
 
-  // Check ASN for known datacenter providers
+  // ASN check — only if not already flagged as hosting
   const asLower = (ipInfo.as + ' ' + ipInfo.isp + ' ' + ipInfo.org).toLowerCase();
   const matchedDC = DATACENTER_INDICATORS.find(dc => asLower.includes(dc));
-  if (matchedDC && !ipInfo.hosting) {
-    results.push({
-      id: genId(),
-      category: 'suspect',
-      title: `ASN de provedor cloud: ${matchedDC}`,
-      description: `O IP está associado ao provedor "${matchedDC}". Isso pode indicar uso de VPS ou servidor cloud como proxy.`,
-      evidence: [
-        `IP: ${ipInfo.ip}`,
-        `ASN: ${ipInfo.as}`,
-        `ISP: ${ipInfo.isp}`,
-        `Provider: ${matchedDC}`,
-      ],
-      severity: 7,
-      module: 'Análise de ASN',
-    });
+  if (matchedDC && !ipInfo.hosting && !ipInfo.proxy) {
+    // Exclude common CDN providers that serve mobile traffic
+    const cdnProviders = ['cloudflare', 'akamai', 'fastly'];
+    if (!cdnProviders.some(cdn => matchedDC.includes(cdn))) {
+      results.push({
+        id: genId(),
+        category: 'suspect',
+        title: `Cloud provider ASN: ${matchedDC}`,
+        description: `IP is associated with cloud provider "${matchedDC}". May indicate VPS or cloud server used as proxy.`,
+        evidence: [
+          `IP: ${ipInfo.ip}`,
+          `ASN: ${ipInfo.as}`,
+          `ISP: ${ipInfo.isp}`,
+        ],
+        severity: 6,
+        module: 'ASN Analysis',
+      });
+    }
   }
 
-  // Check rDNS for server patterns
+  // rDNS check
   if (ipInfo.reverse) {
     const rdns = ipInfo.reverse.toLowerCase();
-    const serverPatterns = ['vps', 'server', 'dedicated', 'cloud', 'host', 'node', 'compute'];
+    const serverPatterns = ['vps', 'server', 'dedicated', 'cloud', 'node', 'compute'];
+    // Removed 'host' — too generic (matches hostname, webhostapp, etc.)
     const matched = serverPatterns.find(p => rdns.includes(p));
     if (matched) {
       results.push({
         id: genId(),
         category: 'suspect',
-        title: `rDNS indica servidor: ${ipInfo.reverse}`,
-        description: `O DNS reverso contém "${matched}", típico de servidores e não de conexões residenciais/móveis.`,
-        evidence: [
-          `IP: ${ipInfo.ip}`,
-          `rDNS: ${ipInfo.reverse}`,
-          `Padrão: ${matched}`,
-        ],
-        severity: 6,
-        module: 'Análise de rDNS',
+        title: `rDNS indicates server: ${ipInfo.reverse}`,
+        description: `Reverse DNS contains "${matched}", typical of servers, not residential/mobile connections.`,
+        evidence: [`IP: ${ipInfo.ip}`, `rDNS: ${ipInfo.reverse}`],
+        severity: 5,
+        module: 'rDNS Analysis',
       });
     }
   }
 
-  // Mobile check - if IP says it's mobile, that's a good sign
+  // Mobile confirmation — positive signal
   if (ipInfo.mobile && !ipInfo.proxy && !ipInfo.hosting) {
     results.push({
       id: genId(),
       category: 'clean',
-      title: `IP de rede móvel confirmado`,
-      description: `O IP ${ipInfo.ip} pertence a uma rede móvel legítima (${ipInfo.isp}), consistente com uso em iPhone.`,
+      title: `Mobile network IP confirmed`,
+      description: `IP ${ipInfo.ip} belongs to a legitimate mobile network (${ipInfo.isp}), consistent with iPhone usage.`,
       evidence: [
         `IP: ${ipInfo.ip}`,
         `ISP: ${ipInfo.isp}`,
-        `Tipo: Rede Móvel`,
-        `Localização: ${ipInfo.city}, ${ipInfo.country}`,
+        `Type: Mobile Network`,
+        `Location: ${ipInfo.city}, ${ipInfo.country}`,
       ],
       severity: 0,
-      module: 'Análise de IP',
+      module: 'IP Analysis',
     });
   }
 
@@ -619,24 +645,26 @@ function analyzeIPInfo(ipInfo: IPInfo | null): AnalysisResult[] {
 
 function analyzeTemporalCorrelation(report: ParsedReport): AnalysisResult[] {
   const results: AnalysisResult[] = [];
-  
-  // Build timeline of events
   const events: { time: Date; domain: string; bundleId: string; type: 'vpn' | 'game' | 'normal' }[] = [];
 
   for (const entry of report.networkAccess) {
     const ts = entry.firstAccess || entry.timeStamp;
     if (!ts) continue;
-
     const time = new Date(ts);
     if (isNaN(time.getTime())) continue;
 
     const bid = (entry.bundleID || entry.context || '').toLowerCase();
     const domain = (entry.domain || '').toLowerCase();
 
+    // Skip system apps for VPN classification
+    if (isKnownSystemApp(bid)) {
+      events.push({ time, domain, bundleId: bid, type: 'normal' });
+      continue;
+    }
+
     let type: 'vpn' | 'game' | 'normal' = 'normal';
-    
-    if (VPN_PROXY_KEYWORDS_IN_BUNDLEID.some(kw => bid.includes(kw)) ||
-        SUSPICIOUS_DOMAIN_PATTERNS.some(p => p.test(domain))) {
+    if (VPN_PROXY_BUNDLE_IDS.has(entry.bundleID || '') ||
+        VPN_PROXY_KEYWORDS_IN_BUNDLEID.some(kw => bid.includes(kw))) {
       type = 'vpn';
     } else if (GAME_BUNDLE_IDS.has(entry.bundleID || '') ||
                GAME_DOMAINS.some(g => domain.includes(g))) {
@@ -648,7 +676,8 @@ function analyzeTemporalCorrelation(report: ParsedReport): AnalysisResult[] {
 
   events.sort((a, b) => a.time.getTime() - b.time.getTime());
 
-  // Detect VPN activity close to game sessions
+  // Detect VPN activity close to game sessions — only exact VPN bundle matches
+  const foundCorrelations = new Set<string>();
   for (let i = 0; i < events.length; i++) {
     if (events[i].type !== 'vpn') continue;
 
@@ -658,23 +687,25 @@ function analyzeTemporalCorrelation(report: ParsedReport): AnalysisResult[] {
       const diffMin = (events[j].time.getTime() - events[i].time.getTime()) / 60000;
       if (diffMin > 30) break;
 
+      const corrKey = `${events[i].bundleId}_${events[j].bundleId}`;
+      if (foundCorrelations.has(corrKey)) continue;
+      foundCorrelations.add(corrKey);
+
       results.push({
         id: genId(),
         category: 'confirmed',
-        title: 'VPN/Proxy ativo antes de sessão de jogo',
-        description: `Atividade de VPN/proxy detectada ${Math.round(diffMin)} minutos antes do acesso ao jogo. Forte indicação de uso de proxy durante gameplay.`,
+        title: 'VPN/Proxy active before game session',
+        description: `VPN/proxy activity detected ${Math.round(diffMin)} minutes before game access. Strong indication of proxy usage during gameplay.`,
         evidence: [
-          `VPN/Proxy: ${events[i].domain} (${events[i].time.toLocaleString()})`,
-          `Jogo: ${events[j].domain} (${events[j].time.toLocaleString()})`,
-          `Intervalo: ${Math.round(diffMin)} minutos`,
-          `Bundle VPN: ${events[i].bundleId}`,
-          `Bundle Jogo: ${events[j].bundleId}`,
+          `VPN: ${events[i].domain} (${events[i].time.toLocaleString()})`,
+          `Game: ${events[j].domain} (${events[j].time.toLocaleString()})`,
+          `Interval: ${Math.round(diffMin)} minutes`,
         ],
-        severity: 10,
+        severity: 9,
         timestamp: events[i].time.toISOString(),
-        module: 'Correlação Temporal',
+        module: 'Temporal Correlation',
       });
-      break; // One finding per VPN event
+      break;
     }
   }
 
@@ -685,37 +716,34 @@ function analyzeDatacenterDomains(domainIPMap: Map<string, IPInfo>, networkAcces
   const results: AnalysisResult[] = [];
   const flagged = new Set<string>();
 
+  const knownCDNs = [
+    'cloudfront.net', 'akamai', 'fastly', 'cloudflare', 'googleapis.com',
+    'apple.com', 'icloud.com', 'gstatic.com', 'fbcdn.net', 'aaplimg.com',
+    'microsoft.com', 'msecnd.net', 'azureedge.net', 'amazonaws.com',
+    'googlevideo.com', 'youtube.com', 'ytimg.com',
+  ];
+
   for (const [domain, info] of domainIPMap) {
     if (flagged.has(domain)) continue;
+    if (knownCDNs.some(cdn => domain.includes(cdn))) continue;
 
-    if (info.hosting || info.proxy) {
-      // Find which app accessed this domain
+    if (info.proxy) {
       const entry = networkAccess.find(e => e.domain === domain);
-      const bid = entry?.bundleID || entry?.context || 'N/A';
-      
-      // Skip well-known CDN/cloud domains that are legitimate
-      const knownCDNs = ['cloudfront.net', 'akamai', 'fastly', 'cloudflare', 'googleapis.com', 'apple.com', 'icloud.com'];
-      if (knownCDNs.some(cdn => domain.includes(cdn))) continue;
-
       flagged.add(domain);
       results.push({
         id: genId(),
-        category: info.proxy ? 'confirmed' : 'suspect',
-        title: `Domínio em ${info.proxy ? 'proxy' : 'datacenter'}: ${domain}`,
-        description: `O domínio ${domain} resolve para IP de ${info.proxy ? 'proxy/VPN' : 'datacenter'} (${info.ip}).`,
+        category: 'confirmed',
+        title: `Domain on proxy server: ${domain}`,
+        description: `Domain ${domain} resolves to proxy IP (${info.ip}).`,
         evidence: [
-          `Domínio: ${domain}`,
-          `IP: ${info.ip}`,
-          `ISP: ${info.isp}`,
-          `ASN: ${info.as}`,
-          `Hosting: ${info.hosting ? 'Sim' : 'Não'}`,
-          `Proxy: ${info.proxy ? 'Sim' : 'Não'}`,
-          `App: ${bid}`,
+          `Domain: ${domain}`, `IP: ${info.ip}`, `ISP: ${info.isp}`,
+          `App: ${entry?.bundleID || 'N/A'}`,
         ],
-        severity: info.proxy ? 8 : 5,
-        module: 'Análise de Infraestrutura',
+        severity: 8,
+        module: 'Infrastructure Analysis',
       });
     }
+    // Removed datacenter-only detection for domains — too many FPs from legitimate CDN/hosting
   }
 
   return results;
@@ -724,86 +752,59 @@ function analyzeDatacenterDomains(domainIPMap: Map<string, IPInfo>, networkAcces
 function analyzeFileIntegrity(report: ParsedReport, rawContent: string): AnalysisResult[] {
   const results: AnalysisResult[] = [];
 
-  // Check entries count — low count alone is NOT suspicious for new devices
-  // Only flag if file size suggests data was stripped
   const totalEntries = report.networkAccess.length + report.dataAccess.length;
-  if (totalEntries < 3 && rawContent.length > 500) {
+  if (totalEntries < 3 && rawContent.length > 2000) {
     results.push({
       id: genId(),
       category: 'suspect',
-      title: 'Arquivo com poucos registros',
-      description: `O relatório contém apenas ${totalEntries} entradas válidas para um arquivo de ${(rawContent.length / 1024).toFixed(1)} KB. Pode indicar dados removidos.`,
-      evidence: [`Total de entradas: ${totalEntries}`, `Tamanho do arquivo: ${(rawContent.length / 1024).toFixed(1)} KB`],
+      title: 'File with very few records',
+      description: `Report contains only ${totalEntries} valid entries for ${(rawContent.length / 1024).toFixed(1)} KB file. May indicate stripped data.`,
+      evidence: [`Entries: ${totalEntries}`, `File size: ${(rawContent.length / 1024).toFixed(1)} KB`],
       severity: 4,
-      module: 'Integridade do Arquivo',
+      module: 'File Integrity',
     });
   }
 
-  // Check timestamp consistency
   const timestamps = report.networkAccess
     .map(e => new Date(e.firstAccess || e.timeStamp || ''))
     .filter(d => !isNaN(d.getTime()))
     .sort((a, b) => a.getTime() - b.getTime());
 
   if (timestamps.length >= 2) {
-    const firstTs = timestamps[0];
-    const lastTs = timestamps[timestamps.length - 1];
-    const days = (lastTs.getTime() - firstTs.getTime()) / 86400000;
+    const days = (timestamps[timestamps.length - 1].getTime() - timestamps[0].getTime()) / 86400000;
 
-    // iOS App Privacy Report only keeps 7 days by default
-    if (days > 8) {
+    if (days > 10) { // Relaxed from 8 to 10 days
       results.push({
         id: genId(),
         category: 'suspect',
-        title: 'Período inconsistente com iOS',
-        description: `O relatório cobre ${Math.round(days)} dias, mas o iOS mantém apenas ~7 dias de dados. Pode indicar dados concatenados ou manipulados.`,
+        title: 'Period inconsistent with iOS',
+        description: `Report covers ${Math.round(days)} days but iOS keeps only ~7 days. May indicate concatenated or manipulated data.`,
         evidence: [
-          `Primeiro registro: ${firstTs.toLocaleString()}`,
-          `Último registro: ${lastTs.toLocaleString()}`,
-          `Período: ${Math.round(days)} dias`,
+          `First: ${timestamps[0].toLocaleString()}`,
+          `Last: ${timestamps[timestamps.length - 1].toLocaleString()}`,
+          `Period: ${Math.round(days)} days`,
         ],
-        severity: 6,
-        module: 'Integridade do Arquivo',
+        severity: 5,
+        module: 'File Integrity',
       });
-    }
-
-    // Check for gaps (more than 24h without activity is suspicious for active device)
-    for (let i = 1; i < timestamps.length; i++) {
-      const gap = (timestamps[i].getTime() - timestamps[i - 1].getTime()) / 3600000;
-      if (gap > 48) {
-        results.push({
-          id: genId(),
-          category: 'suspect',
-          title: 'Gap de atividade detectado',
-          description: `Lacuna de ${Math.round(gap)} horas sem atividade. Pode indicar que o dispositivo foi desligado, em modo avião, ou dados foram removidos.`,
-          evidence: [
-            `De: ${timestamps[i - 1].toLocaleString()}`,
-            `Até: ${timestamps[i].toLocaleString()}`,
-            `Gap: ${Math.round(gap)} horas`,
-          ],
-          severity: 3,
-          module: 'Integridade do Arquivo',
-        });
-        break; // Report only first major gap
-      }
     }
   }
 
-  // Check for future timestamps
+  // Future timestamps — definitive manipulation
   const now = new Date();
-  const futureEntries = timestamps.filter(t => t > now);
-  if (futureEntries.length > 0) {
+  const futureEntries = timestamps.filter(t => t > new Date(now.getTime() + 86400000)); // +1 day tolerance
+  if (futureEntries.length > 2) { // At least 3 to avoid timezone edge cases
     results.push({
       id: genId(),
       category: 'confirmed',
-      title: 'Timestamps no futuro detectados',
-      description: `${futureEntries.length} registros possuem timestamps no futuro, forte indicação de manipulação.`,
+      title: 'Future timestamps detected',
+      description: `${futureEntries.length} records have future timestamps, strong indication of manipulation.`,
       evidence: [
-        `Entradas com data futura: ${futureEntries.length}`,
-        `Exemplo: ${futureEntries[0].toLocaleString()}`,
+        `Future entries: ${futureEntries.length}`,
+        `Example: ${futureEntries[0].toLocaleString()}`,
       ],
       severity: 9,
-      module: 'Integridade do Arquivo',
+      module: 'File Integrity',
     });
   }
 
@@ -812,46 +813,40 @@ function analyzeFileIntegrity(report: ParsedReport, rawContent: string): Analysi
 
 function analyzeNetworkBehavior(report: ParsedReport): AnalysisResult[] {
   const results: AnalysisResult[] = [];
-
-  // Build domain-to-app map
   const domainsByApp = new Map<string, Set<string>>();
+  
   for (const entry of report.networkAccess) {
     const bid = entry.bundleID || entry.context || 'unknown';
     if (!domainsByApp.has(bid)) domainsByApp.set(bid, new Set());
     domainsByApp.get(bid)!.add(entry.domain);
   }
 
-  // Check for apps with suspicious domain patterns — require multiple suspicious domains
-  // to avoid false positives from apps with heavy analytics/ad SDKs
   for (const [app, domains] of domainsByApp) {
-    // Skip known system/Apple apps
-    if (app.includes('apple') || app.includes('com.google') || app === 'unknown') continue;
+    if (isKnownSystemApp(app) || app === 'unknown') continue;
     
     const suspiciousDomains = [...domains].filter(d => 
       SUSPICIOUS_DOMAIN_PATTERNS.some(p => p.test(d))
     );
-    // Only flag if >50% of domains are suspicious OR there are 5+ suspicious domains
-    if (suspiciousDomains.length >= 5 && domains.size > 20) {
+    // Much stricter: need 8+ suspicious domains AND they must be >30% of total
+    if (suspiciousDomains.length >= 8 && (suspiciousDomains.length / domains.size) > 0.3) {
       results.push({
         id: genId(),
         category: 'suspect',
-        title: `App com atividade de rede anômala: ${app}`,
-        description: `O app ${app} acessou ${domains.size} domínios únicos, incluindo ${suspiciousDomains.length} suspeitos.`,
+        title: `App with anomalous network activity: ${app}`,
+        description: `App ${app} accessed ${domains.size} unique domains, including ${suspiciousDomains.length} suspicious ones (${Math.round(suspiciousDomains.length / domains.size * 100)}%).`,
         evidence: [
           `App: ${app}`,
-          `Domínios únicos: ${domains.size}`,
-          `Domínios suspeitos: ${suspiciousDomains.slice(0, 5).join(', ')}`,
+          `Unique domains: ${domains.size}`,
+          `Suspicious: ${suspiciousDomains.slice(0, 5).join(', ')}`,
         ],
         severity: 5,
-        module: 'Análise Comportamental',
+        module: 'Behavioral Analysis',
       });
     }
   }
 
   return results;
 }
-
-// ============ IPA SIDELOAD DETECTION ============
 
 function analyzeSideloadApps(report: ParsedReport): AnalysisResult[] {
   const results: AnalysisResult[] = [];
@@ -861,48 +856,48 @@ function analyzeSideloadApps(report: ParsedReport): AnalysisResult[] {
     const bid = entry.bundleID || entry.context || '';
     if (!bid) continue;
 
-    // Exact bundle ID match
     if (SIDELOAD_BUNDLE_IDS.has(bid) && !foundApps.has(bid)) {
       foundApps.add(bid);
       results.push({
         id: genId(),
         category: 'confirmed',
-        title: `App de sideload/IPA detectado: ${bid}`,
-        description: `O bundle ID "${bid}" corresponde a uma ferramenta conhecida de instalação de apps não-oficiais (sideloading). Isso permite instalar apps modificados, cheats e ferramentas de manipulação.`,
+        title: `Sideload/IPA tool detected: ${bid}`,
+        description: `Bundle ID "${bid}" matches a known sideloading tool that allows installing unofficial/modified apps.`,
         evidence: [
           `Bundle ID: ${bid}`,
-          `Domínio acessado: ${entry.domain}`,
+          `Domain: ${entry.domain}`,
           `Timestamp: ${entry.firstAccess || 'N/A'}`,
           `Hits: ${entry.hits}`,
         ],
         severity: 10,
         timestamp: entry.firstAccess,
-        module: 'Detecção de IPA/Sideload',
+        module: 'Sideload Detection',
       });
     }
 
-    // Keyword match
+    // Keyword match — require hits >= 3
     const bidLower = bid.toLowerCase();
     const matchedKw = SIDELOAD_KEYWORDS_IN_BUNDLEID.find(kw => bidLower.includes(kw));
-    if (matchedKw && !foundApps.has(bid)) {
+    if (matchedKw && !foundApps.has(bid) && entry.hits >= 3) {
       foundApps.add(bid);
       results.push({
         id: genId(),
         category: 'confirmed',
-        title: `Possível app de sideload: ${bid}`,
-        description: `O bundle ID contém a palavra-chave "${matchedKw}", associada a ferramentas de sideloading (KSign, ESign, GBox, etc).`,
+        title: `Possible sideload app: ${bid}`,
+        description: `Bundle ID contains keyword "${matchedKw}", associated with sideloading tools.`,
         evidence: [
           `Bundle ID: ${bid}`,
           `Keyword: ${matchedKw}`,
-          `Domínio: ${entry.domain}`,
+          `Domain: ${entry.domain}`,
+          `Hits: ${entry.hits}`,
         ],
-        severity: 9,
+        severity: 8,
         timestamp: entry.firstAccess,
-        module: 'Detecção de IPA/Sideload',
+        module: 'Sideload Detection',
       });
     }
 
-    // Domain match for sideload services
+    // Domain match
     const domainLower = (entry.domain || '').toLowerCase();
     const matchedDomain = SIDELOAD_DOMAINS.find(d => domainLower.includes(d));
     if (matchedDomain && !foundApps.has(`domain_${matchedDomain}`)) {
@@ -910,17 +905,16 @@ function analyzeSideloadApps(report: ParsedReport): AnalysisResult[] {
       results.push({
         id: genId(),
         category: 'confirmed',
-        title: `Acesso a serviço de sideload: ${matchedDomain}`,
-        description: `O domínio "${entry.domain}" está associado ao serviço de sideloading "${matchedDomain}". Indica uso de ferramentas para instalar apps fora da App Store.`,
+        title: `Sideload service access: ${matchedDomain}`,
+        description: `Domain "${entry.domain}" is associated with sideloading service "${matchedDomain}".`,
         evidence: [
-          `Domínio: ${entry.domain}`,
-          `Serviço: ${matchedDomain}`,
+          `Domain: ${entry.domain}`,
+          `Service: ${matchedDomain}`,
           `App: ${bid || 'N/A'}`,
-          `Timestamp: ${entry.firstAccess || 'N/A'}`,
         ],
         severity: 9,
         timestamp: entry.firstAccess,
-        module: 'Detecção de IPA/Sideload',
+        module: 'Sideload Detection',
       });
     }
   }
@@ -928,61 +922,10 @@ function analyzeSideloadApps(report: ParsedReport): AnalysisResult[] {
   return results;
 }
 
-// ============ APP STORE BEHAVIOR DETECTION ============
-
 function analyzeAppStoreBehavior(report: ParsedReport): AnalysisResult[] {
-  const results: AnalysisResult[] = [];
-  
-  const appStoreAccess: { time: Date; domain: string }[] = [];
-  const gameAccess: { time: Date; domain: string; bundleId: string }[] = [];
-
-  for (const entry of report.networkAccess) {
-    const ts = entry.firstAccess || entry.timeStamp;
-    if (!ts) continue;
-    const time = new Date(ts);
-    if (isNaN(time.getTime())) continue;
-
-    const domain = (entry.domain || '').toLowerCase();
-    const bid = (entry.bundleID || entry.context || '').toLowerCase();
-
-    // Detect App Store activity
-    if (bid.includes('com.apple.appstore') || domain.includes('apps.apple.com') ||
-        domain.includes('itunes.apple.com') || domain.includes('buy.itunes.apple.com') ||
-        domain.includes('p-appstore') || domain.includes('mesu.apple.com')) {
-      appStoreAccess.push({ time, domain });
-    }
-
-    // Detect game activity
-    if (GAME_BUNDLE_IDS.has(entry.bundleID || '') || GAME_DOMAINS.some(g => domain.includes(g))) {
-      gameAccess.push({ time, domain, bundleId: bid });
-    }
-  }
-
-  // Check if App Store was accessed right before a game session
-  for (const store of appStoreAccess) {
-    for (const game of gameAccess) {
-      const diffMin = (game.time.getTime() - store.time.getTime()) / 60000;
-      if (diffMin > 0 && diffMin < 15) {
-        results.push({
-          id: genId(),
-          category: 'suspect',
-          title: 'App Store acessada antes de sessão de jogo',
-          description: `A App Store foi acessada ${Math.round(diffMin)} minutos antes da sessão do jogo. Pode indicar download de app modificado ou cheat.`,
-          evidence: [
-            `App Store: ${store.domain} (${store.time.toLocaleString()})`,
-            `Jogo: ${game.domain} (${game.time.toLocaleString()})`,
-            `Intervalo: ${Math.round(diffMin)} min`,
-          ],
-          severity: 5,
-          timestamp: store.time.toISOString(),
-          module: 'Análise Comportamental',
-        });
-        break;
-      }
-    }
-  }
-
-  return results;
+  // Removed this detection module — it generates too many false positives.
+  // Accessing App Store before a game is completely normal user behavior.
+  return [];
 }
 
 // ============ SCORE CALCULATION ============
@@ -995,19 +938,24 @@ function calculateRiskScore(results: AnalysisResult[]): number {
 
   let score = 0;
 
-  // Only count high-severity confirmed findings strongly
+  // Confirmed findings: weighted by severity
   for (const r of confirmed) {
-    score += r.severity >= 8 ? r.severity * 2 : r.severity * 1.2;
+    score += r.severity >= 8 ? r.severity * 1.8 : r.severity * 1;
   }
-  // Suspects contribute much less to avoid inflating score
+  // Suspects: contribute very little
   for (const r of suspect) {
-    score += r.severity >= 7 ? r.severity * 0.6 : r.severity * 0.3;
+    score += r.severity * 0.25;
   }
 
-  // Cross-correlation bonus only when multiple DIFFERENT modules confirm issues
+  // Cross-correlation bonus only for confirmed from different modules
   const confirmedModules = new Set(confirmed.map(r => r.module));
-  if (confirmedModules.size >= 3) score += 10;
-  if (confirmedModules.size >= 5) score += 8;
+  if (confirmedModules.size >= 3) score += 8;
+  if (confirmedModules.size >= 5) score += 5;
+
+  // Cap suspects-only scenarios at 40
+  if (confirmed.length === 0) {
+    score = Math.min(40, score);
+  }
 
   return Math.min(100, Math.round(score));
 }
@@ -1021,96 +969,74 @@ export async function analyzeReport(
 ): Promise<AnalysisReport> {
   idCounter = 0;
 
-  // Stage 1: Parse
-  onProgress('Validando e parseando arquivo...', 5);
+  onProgress('Validating and parsing file...', 5);
   const report = parseNDJSON(rawContent);
   
   if (report.networkAccess.length === 0 && report.dataAccess.length === 0) {
-    throw new Error('Nenhum dado de privacidade encontrado no arquivo. Verifique se é um App Privacy Report válido do iOS.');
+    throw new Error('No privacy data found in file. Verify it is a valid iOS App Privacy Report.');
   }
 
-  onProgress('Arquivo parseado com sucesso', 15, `${report.networkAccess.length} entradas de rede, ${report.dataAccess.length} acessos a dados`);
+  onProgress('File parsed successfully', 15, `${report.networkAccess.length} network entries, ${report.dataAccess.length} data accesses`);
 
-  // Stage 2: Enrich IP
-  onProgress('Analisando IP do dispositivo...', 20);
+  onProgress('Analyzing device IP...', 20);
   let ipInfo: IPInfo | null = null;
   if (deviceIP && deviceIP.trim() !== '') {
     ipInfo = await getIPInfo(deviceIP);
     if (ipInfo) {
-      onProgress('IP enriquecido com sucesso', 30, `${ipInfo.isp} - ${ipInfo.city}, ${ipInfo.country}`);
+      onProgress('IP enriched', 30, `${ipInfo.isp} - ${ipInfo.city}, ${ipInfo.country}`);
     } else {
-      onProgress('Não foi possível analisar o IP', 30, 'Continuando sem dados de IP');
+      onProgress('Could not analyze IP', 30);
     }
   } else {
-    onProgress('Nenhum IP informado, pulando análise de IP', 30);
+    onProgress('No IP provided, skipping IP analysis', 30);
   }
 
-  // Stage 3: Analyze VPN/Proxy apps
-  onProgress('Detectando apps de VPN/Proxy...', 35);
+  onProgress('Detecting VPN/Proxy apps...', 38);
   const vpnResults = analyzeVPNApps(report);
 
-  // Stage 4: Detect IPA sideload tools
-  onProgress('Detectando ferramentas de sideload (KSign, ESign, GBox)...', 40);
+  onProgress('Detecting sideload tools...', 45);
   const sideloadResults = analyzeSideloadApps(report);
 
-  // Stage 5: Analyze domains
-  onProgress('Analisando domínios acessados...', 48);
+  onProgress('Analyzing domains...', 52);
   const domainResults = analyzeSuspiciousDomains(report);
 
-  // Stage 6: Analyze IP
-  onProgress('Processando dados de IP...', 55);
+  onProgress('Processing IP data...', 58);
   const ipResults = analyzeIPInfo(ipInfo);
 
-  // Stage 7: Temporal correlation
-  onProgress('Correlacionando eventos temporais...', 62);
+  onProgress('Temporal correlation...', 65);
   const temporalResults = analyzeTemporalCorrelation(report);
 
-  // Stage 8: File integrity
-  onProgress('Verificando integridade do arquivo...', 70);
+  onProgress('Checking file integrity...', 72);
   const integrityResults = analyzeFileIntegrity(report, rawContent);
 
-  // Stage 9: Network behavior
-  onProgress('Analisando comportamento de rede...', 76);
+  onProgress('Analyzing network behavior...', 78);
   const behaviorResults = analyzeNetworkBehavior(report);
 
-  // Stage 10: App Store behavior
-  onProgress('Analisando comportamento da App Store...', 80);
-  const appStoreResults = analyzeAppStoreBehavior(report);
-
-  // Stage 11: Domain IP enrichment
-  onProgress('Enriquecendo domínios suspeitos com API...', 85);
+  onProgress('Enriching suspicious domains via API...', 85);
   const suspiciousDomains = [...new Set(
     report.networkAccess
       .filter(e => {
         const d = (e.domain || '').toLowerCase();
-        return SUSPICIOUS_DOMAIN_PATTERNS.some(p => p.test(d)) ||
-               HIGH_RISK_TLDS.has(getTLD(d));
+        return SUSPICIOUS_DOMAIN_PATTERNS.some(p => p.test(d));
       })
       .map(e => e.domain)
   )];
 
   let dcResults: AnalysisResult[] = [];
   if (suspiciousDomains.length > 0) {
-    const domainIPs = await checkDomainsViaIP(suspiciousDomains.slice(0, 10));
+    const domainIPs = await checkDomainsViaIP(suspiciousDomains.slice(0, 8));
     dcResults = analyzeDatacenterDomains(domainIPs, report.networkAccess);
   }
 
-  onProgress('Gerando relatório final...', 95);
+  onProgress('Generating final report...', 95);
 
-  // Combine all results
   const allResults = [
-    ...vpnResults,
-    ...sideloadResults,
-    ...domainResults,
-    ...ipResults,
-    ...temporalResults,
-    ...integrityResults,
-    ...behaviorResults,
-    ...appStoreResults,
-    ...dcResults,
+    ...vpnResults, ...sideloadResults, ...domainResults,
+    ...ipResults, ...temporalResults, ...integrityResults,
+    ...behaviorResults, ...dcResults,
   ];
 
-  // Deduplicate
+  // Deduplicate by title
   const seen = new Set<string>();
   const uniqueResults = allResults.filter(r => {
     if (seen.has(r.title)) return false;
@@ -1120,24 +1046,22 @@ export async function analyzeReport(
 
   uniqueResults.sort((a, b) => b.severity - a.severity);
 
-  // If nothing bad found, mark as clean
   if (uniqueResults.filter(r => r.category !== 'clean').length === 0) {
     uniqueResults.push({
       id: genId(),
       category: 'clean',
-      title: 'Nenhuma atividade suspeita detectada',
-      description: 'A análise completa não identificou indicadores de proxy, VPN, túnel ou interceptação de tráfego no relatório.',
+      title: 'No suspicious activity detected',
+      description: 'Complete analysis found no indicators of proxy, VPN, tunnel or traffic interception in the report.',
       evidence: [
-        'Todas as 10 verificações passaram sem alertas',
-        `${report.networkAccess.length} entradas de rede analisadas`,
-        `Domínios verificados via API de inteligência de IP`,
+        'All verification modules passed',
+        `${report.networkAccess.length} network entries analyzed`,
+        `Domains verified via IP intelligence API`,
       ],
       severity: 0,
-      module: 'Resultado Geral',
+      module: 'Overall Result',
     });
   }
 
-  // Compute metadata
   const allDomains = [...new Set(report.networkAccess.map(e => e.domain).filter(Boolean))];
   const appHits = new Map<string, number>();
   for (const e of report.networkAccess) {
@@ -1156,7 +1080,7 @@ export async function analyzeReport(
     .filter(d => !isNaN(d.getTime()))
     .sort((a, b) => a.getTime() - b.getTime());
 
-  onProgress('Análise concluída!', 100);
+  onProgress('Analysis complete!', 100);
 
   return {
     deviceIP: deviceIP || 'N/A',
