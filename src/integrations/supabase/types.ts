@@ -14,7 +14,83 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      blacklist: {
+        Row: {
+          banned_at: string
+          created_at: string
+          device_ip: string
+          device_model: string
+          findings: Json
+          id: string
+          ip_info: Json | null
+          network_events: Json
+          reason: string
+          risk_score: number
+          serial: string
+        }
+        Insert: {
+          banned_at?: string
+          created_at?: string
+          device_ip: string
+          device_model?: string
+          findings?: Json
+          id?: string
+          ip_info?: Json | null
+          network_events?: Json
+          reason: string
+          risk_score?: number
+          serial: string
+        }
+        Update: {
+          banned_at?: string
+          created_at?: string
+          device_ip?: string
+          device_model?: string
+          findings?: Json
+          id?: string
+          ip_info?: Json | null
+          network_events?: Json
+          reason?: string
+          risk_score?: number
+          serial?: string
+        }
+        Relationships: []
+      }
+      blacklist_audit_log: {
+        Row: {
+          action: string
+          created_at: string
+          id: string
+          success: boolean
+          target_id: string | null
+          target_ip: string
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          id?: string
+          success?: boolean
+          target_id?: string | null
+          target_ip?: string
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          id?: string
+          success?: boolean
+          target_id?: string | null
+          target_ip?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "blacklist_audit_log_target_id_fkey"
+            columns: ["target_id"]
+            isOneToOne: false
+            referencedRelation: "blacklist"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
